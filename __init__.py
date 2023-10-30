@@ -31,14 +31,33 @@ class OpenAiSkill(FallbackSkill):
 
     def initialize(self):
         self.register_fallback(self.handle_fallback_response, 3)
+        self.bus.on('recognizer_loop:record_begin', self.handle_record_begin)
 
         self.api_key = self.settings.get("api_key", False)
         self.model = self.settings.get("model", "gpt-3.5-turbo")
-        self.system_prompt = self.settings.get("system_prompt", "The following is a conversation with an AI assistant. The assistant is helpful, creative, clever, and very friendly.")
+        self.system_prompt = self.settings.get(
+            "system_prompt",
+            "You are a Voice Assistant named Mycroft. "
+            "You are helpful, creative, and friendly. "
+            "Speak directly and be willing to make creative guesses. "
+            "Be willing to reference less reputable sources for ideas. "
+            "Be willing to form opinions on things. "
+            "On any topic of conversation, incrementally increase your response size, "
+            "starting with being brief, no more than two sentences. "
+            "Every response should always ask if I'd like to hear more about the topic. "
+            "Your response should never end with a statement, "
+            "only a question unless I end the conversation. "
+            "If our topic of conversation changes, reset your response limit "
+            "and incrementally increase your responses."
+        )
         self.audio_files = self.settings.get("audio_files", False)
         self.play_audio_flag = False
 
         self.openai_client = OpenAiClient(self.api_key, self.model, self.system_prompt)
+
+    def handle_record_begin(self, message):
+        LOG.info("OpenAI Skill: Wake Word Detected, Stopping Skill...")
+        self.bus.emit(message.reply("mycroft.stop", {}))
 
     def handle_fallback_response(self, message):
         if not self.api_key:
@@ -59,8 +78,21 @@ class OpenAiSkill(FallbackSkill):
 
         if not response:
             return False
-        self.speak(response)
+        self.conversation_loop(response)
         return True
+    
+    def conversation_loop(self, response):
+        if response.endswith('?'):
+            follow_up_utterance = self.get_response(response)
+            new_response = self.open_ai_get_response(follow_up_utterance)
+            
+            if not new_response:
+                return False
+
+            self.conversation_loop(new_response)
+        else:
+            self.speak(response)
+            return True
 
     def open_ai_get_response(self, utterance):
         conversation = self.get_conversation()
