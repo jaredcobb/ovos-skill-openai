@@ -1,16 +1,16 @@
 import json
-import tiktoken
-import threading
 import random
+import threading
+import tiktoken
 import time
+from .lib.OpenAiClient import OpenAiClient
+from datetime import datetime, timedelta
 from ovos_utils import classproperty
 from ovos_utils.log import LOG
 from ovos_utils.process_utils import RuntimeRequirements
-from ovos_utils.sound import play_acknowledge_sound
-from ovos_workshop.skills.fallback import FallbackSkill
 from ovos_utils.sound import play_audio
-from datetime import datetime, timedelta
-from .lib.OpenAiClient import OpenAiClient
+from ovos_workshop.decorators import killable_intent
+from ovos_workshop.skills.fallback import FallbackSkill
 
 class OpenAiSkill(FallbackSkill):
 
@@ -31,8 +31,6 @@ class OpenAiSkill(FallbackSkill):
 
     def initialize(self):
         self.register_fallback(self.handle_fallback_response, 3)
-        self.bus.on('recognizer_loop:record_begin', self.handle_record_begin)
-
         self.api_key = self.settings.get("api_key", False)
         self.model = self.settings.get("model", "gpt-3.5-turbo")
         self.system_prompt = self.settings.get(
@@ -52,12 +50,7 @@ class OpenAiSkill(FallbackSkill):
         )
         self.audio_files = self.settings.get("audio_files", False)
         self.play_audio_flag = False
-
         self.openai_client = OpenAiClient(self.api_key, self.model, self.system_prompt)
-
-    def handle_record_begin(self, message):
-        LOG.info("OpenAI Skill: Wake Word Detected, Stopping Skill...")
-        self.bus.emit(message.reply("mycroft.stop", {}))
 
     def handle_fallback_response(self, message):
         if not self.api_key:
@@ -81,17 +74,20 @@ class OpenAiSkill(FallbackSkill):
         self.conversation_loop(response)
         return True
     
+    @killable_intent(msg="recognizer_loop:wakeword")
     def conversation_loop(self, response):
         if response.endswith('?'):
-            follow_up_utterance = self.get_response(response)
+            follow_up_utterance = self.get_response(dialog=response, num_retries=0, wait=60)
+            if follow_up_utterance is None:
+                return False
             new_response = self.open_ai_get_response(follow_up_utterance)
-            
+
             if not new_response:
                 return False
 
             self.conversation_loop(new_response)
         else:
-            self.speak(response)
+            self.speak(response, wait=True)
             return True
 
     def open_ai_get_response(self, utterance):
