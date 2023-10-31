@@ -1,9 +1,9 @@
 import json
+import openai
 import random
 import threading
 import tiktoken
 import time
-from .lib.OpenAiClient import OpenAiClient
 from datetime import datetime, timedelta
 from ovos_utils import classproperty
 from ovos_utils.log import LOG
@@ -30,7 +30,7 @@ class OpenAiSkill(FallbackSkill):
         super().__init__("OpenAiSkill")
 
     def initialize(self):
-        self.register_fallback(self.handle_fallback_response, 3)
+        self.register_fallback(self.handle_fallback_response, 5)
         self.api_key = self.settings.get("api_key", False)
         self.model = self.settings.get("model", "gpt-3.5-turbo")
         self.system_prompt = self.settings.get(
@@ -48,9 +48,9 @@ class OpenAiSkill(FallbackSkill):
             "If our topic of conversation changes, reset your response limit "
             "and incrementally increase your responses."
         )
+        openai.api_key = self.api_key
         self.audio_files = self.settings.get("audio_files", False)
         self.play_audio_flag = False
-        self.openai_client = OpenAiClient(self.api_key, self.model, self.system_prompt)
 
     def handle_fallback_response(self, message):
         if not self.api_key:
@@ -77,7 +77,7 @@ class OpenAiSkill(FallbackSkill):
     @killable_intent(msg="recognizer_loop:wakeword")
     def conversation_loop(self, response):
         if response.endswith('?'):
-            follow_up_utterance = self.get_response(dialog=response, num_retries=0, wait=60)
+            follow_up_utterance = self.get_response(dialog=response, num_retries=0, wait=90)
             if follow_up_utterance is None:
                 return False
             new_response = self.open_ai_get_response(follow_up_utterance)
@@ -87,7 +87,12 @@ class OpenAiSkill(FallbackSkill):
 
             self.conversation_loop(new_response)
         else:
-            self.speak(response, wait=True)
+            # The reason we wait for the response to finish speaking is because
+            # the conversation loop is killable if the user says the wakeword.
+            # If we don't wait for the response to finish speaking, the
+            # audio will continue to play because this function will have
+            # already returned.
+            self.speak(response, wait=90)
             return True
 
     def open_ai_get_response(self, utterance):
@@ -103,19 +108,44 @@ class OpenAiSkill(FallbackSkill):
         # Prune the conversation
         pruned_conversation = self.prune_conversation(conversation)
         
-        response = self.openai_client.chat(pruned_conversation)
+        sanitized_conversation = self.sanitize_conversation(conversation)
+        payload = self.build_request_payload(sanitized_conversation)
+        response = openai.ChatCompletion.create(**payload)
+        parsed_response = self.parse_openai_response(response)
         
         # Append the OpenAI response
         pruned_conversation.append({
             "role": "assistant",
-            "content": response,
+            "content": parsed_response,
             "timestamp": datetime.now().isoformat()
         })
 
         # Save the pruned conversation
         self.save_conversation(pruned_conversation)
         
-        return response
+        return parsed_response
+
+    def sanitize_conversation(self, conversation):
+        sanitized_conversation = []
+        for message in conversation:
+            sanitized_message = {k: v for k, v in message.items() if k != 'timestamp'}
+            sanitized_conversation.append(sanitized_message)
+        return sanitized_conversation
+
+    def build_request_payload(self, sanitized_conversation):
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            *sanitized_conversation
+        ]
+        return {"model": self.model, "messages": messages}
+
+    def parse_openai_response(self, api_response):
+        try:
+            message_content = api_response['choices'][0]['message']['content']
+        except (KeyError, IndexError, TypeError):
+            LOG.error(f"OpenAI API response parsing failed. Response: {json.dumps(api_response)}")
+            message_content = "OpenAI API response parsing failed. Please check the logs."
+        return message_content.strip()
 
     def get_conversation(self):
         file_name = "conversation.json"
