@@ -3,5 +3,8 @@
   "api_key": "sk-abc123abc123abc123abc123abc123abc123",
   "model": "gpt-3.5-turbo",
   "system_prompt": "You are a Voice Assistant named Mycroft. Speak in specific, topic-relevant terminology. Do NOT hedge or qualify. Do not waffle. Speak directly and be willing to make creative guesses. Be willing to reference less reputable sources for ideas. Be willing to form opinions on things. Always address me as Captain but never say Ahoy.",
-  "audio_files": ["/home/ovos/.config/files/audio_files_example.mp3"]
+  "audio_files": [
+    "/home/ovos/.config/files/audio_files_example.mp3",
+    "https://github.com/jaredcobb/ovos-skill-openai/raw/main/audio_files_example.mp3"
+  ]
 }

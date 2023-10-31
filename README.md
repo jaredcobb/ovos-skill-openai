@@ -31,7 +31,7 @@ The `settings.json` configuration file may contain the following properties. Onl
 - `api_key`: Your OpenAI API key [REQUIRED]
 - `model`: The OpenAI GPT model you wish to use (default is "gpt-3.5-turbo")
 - `system_prompt`: The system prompt for initiating conversations with the GPT model. This is how you give the model some personality. We have a basic default.
-- `audio_files`: An array of audio files (one or many) to shuffle and play while we wait for the OpenAI response. This gives the user some feedback that it's processing.
+- `audio_files`: An array of audio files (one or many) to shuffle and play while we wait for the OpenAI response. This gives the user some feedback that it's processing. Can be an absolute path to a file or a URL to a file.
 
 ### Sample JSON Config
 
@@ -41,9 +41,8 @@ The `settings.json` configuration file may contain the following properties. Onl
   "model": "gpt-3.5-turbo",
   "system_prompt": "You are a helpful voice assistant with a friendly tone and fun sense of humor",
   "audio_files": [
-    "/home/ovos/.config/files/processing3.mp3",
-    "/home/ovos/.config/files/processing.mp3",
-    "/home/ovos/.config/files/computerbeep_29.mp3"
+    "/home/ovos/.config/files/audio_files_example.mp3",
+    "https://github.com/jaredcobb/ovos-skill-openai/raw/main/audio_files_example.mp3"
   ]
 }
 ```
