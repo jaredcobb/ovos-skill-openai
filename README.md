@@ -31,7 +31,7 @@ The `settings.json` configuration file may contain the following properties. Onl
 - `api_key`: Your OpenAI API key [REQUIRED]
 - `model`: The OpenAI GPT model you wish to use (default is "gpt-3.5-turbo")
 - `system_prompt`: The system prompt for initiating conversations with the GPT model. This is how you give the model some personality. We have a basic default.
-- `audio_files`: An array of audio files (one or many) to shuffle and play while we wait for the OpenAI response. This gives the user some feedback that it's processing. Can be an absolute path to a file or a URL to a file.
+- `audio_files`: An array of audio files (one or many) to shuffle and play while we wait for the OpenAI response. The `gpt-4` model is particularly slow at times. This gives the user some feedback that it's processing. Can be an absolute path to a file or a URL to a file.
 
 ### Sample JSON Config
 
