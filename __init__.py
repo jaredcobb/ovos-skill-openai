@@ -33,6 +33,7 @@ class OpenAiSkill(FallbackSkill):
         self.register_fallback(self.handle_fallback_response, 5)
         self.api_key = self.settings.get("api_key", False)
         self.model = self.settings.get("model", "gpt-3.5-turbo")
+        self.wait_timeout = self.settings.get("wait_timeout", True)
         self.system_prompt = self.settings.get(
             "system_prompt",
             "You are a Voice Assistant named Mycroft. "
@@ -77,7 +78,7 @@ class OpenAiSkill(FallbackSkill):
     @killable_intent(msg="recognizer_loop:wakeword")
     def conversation_loop(self, response):
         if response.endswith('?'):
-            follow_up_utterance = self.get_response(dialog=response, num_retries=0, wait=90)
+            follow_up_utterance = self.get_response(dialog=response, num_retries=0, wait=self.wait_timeout)
             if follow_up_utterance is None:
                 return False
             new_response = self.open_ai_get_response(follow_up_utterance)
@@ -92,7 +93,7 @@ class OpenAiSkill(FallbackSkill):
             # If we don't wait for the response to finish speaking, the
             # audio will continue to play because this function will have
             # already returned.
-            self.speak(response, wait=90)
+            self.speak(response, wait=self.wait_timeout)
             return True
 
     def open_ai_get_response(self, utterance):
