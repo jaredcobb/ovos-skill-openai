@@ -6,9 +6,7 @@ import tiktoken
 import time
 from datetime import datetime, timedelta
 from ovos_utils import classproperty
-from ovos_utils.log import LOG
 from ovos_utils.process_utils import RuntimeRequirements
-from ovos_utils.sound import play_audio
 from ovos_workshop.decorators import killable_intent
 from ovos_workshop.skills.fallback import FallbackSkill
 
@@ -28,6 +26,7 @@ class OpenAiSkill(FallbackSkill):
 
     def __init__(self):
         super().__init__("OpenAiSkill")
+        self.audio_done_playing_event = threading.Event()
 
     def initialize(self):
         self.register_fallback(self.handle_fallback_response, 5)
@@ -55,15 +54,13 @@ class OpenAiSkill(FallbackSkill):
 
     def handle_fallback_response(self, message):
         if not self.api_key:
-            LOG.error("OpenAI Skill: Missing OpenAI API Key")
+            self.log.error("Missing OpenAI API Key")
             self.speak("The OpenAI API key is missing. Please check your configuration.")
             return False
 
+        self.audio_done_playing_event.clear()
         if self.audio_files:
-            random.shuffle(self.audio_files)
-            self.play_audio_flag = True
-            audio_thread = threading.Thread(target=self.play_audio_in_loop)
-            audio_thread.start()
+            self.play_audio_files()
 
         utterance = message.data['utterance']
         response = self.open_ai_get_response(utterance)
@@ -78,11 +75,15 @@ class OpenAiSkill(FallbackSkill):
     @killable_intent(msg="recognizer_loop:wakeword")
     def conversation_loop(self, response):
         if response.endswith('?'):
+
+            self.log.info("Question detected. Calling self.get_response()")
+            self.audio_done_playing_event.wait()
             follow_up_utterance = self.get_response(dialog=response, num_retries=0, wait=self.wait_timeout)
+            self.log.info(f"follow_up_utterance: {follow_up_utterance}")
             if follow_up_utterance is None:
                 return False
-            new_response = self.open_ai_get_response(follow_up_utterance)
 
+            new_response = self.open_ai_get_response(follow_up_utterance)
             if not new_response:
                 return False
 
@@ -93,6 +94,7 @@ class OpenAiSkill(FallbackSkill):
             # If we don't wait for the response to finish speaking, the
             # audio will continue to play because this function will have
             # already returned.
+            self.log.info("Statement detected. Calling self.speak()")
             self.speak(response, wait=self.wait_timeout)
             return True
 
@@ -111,8 +113,14 @@ class OpenAiSkill(FallbackSkill):
         
         sanitized_conversation = self.sanitize_conversation(conversation)
         payload = self.build_request_payload(sanitized_conversation)
-        response = openai.ChatCompletion.create(**payload)
-        parsed_response = self.parse_openai_response(response)
+
+        self.log.info("Sending payload to OpenAI API")
+        try:
+            response = openai.ChatCompletion.create(**payload)
+            parsed_response = self.parse_openai_response(response)
+        except openai.error.OpenAIError as e:
+            self.log.error(f"OpenAI API error: {str(e)}")
+            parsed_response = "OpenAI API error. Please check the logs."
         
         # Append the OpenAI response
         pruned_conversation.append({
@@ -144,7 +152,7 @@ class OpenAiSkill(FallbackSkill):
         try:
             message_content = api_response['choices'][0]['message']['content']
         except (KeyError, IndexError, TypeError):
-            LOG.error(f"OpenAI API response parsing failed. Response: {json.dumps(api_response)}")
+            self.log.error(f"OpenAI API response parsing failed. Response: {json.dumps(api_response)}")
             message_content = "OpenAI API response parsing failed. Please check the logs."
         return message_content.strip()
 
@@ -168,7 +176,7 @@ class OpenAiSkill(FallbackSkill):
             try:
                 message_time = datetime.fromisoformat(message.get('timestamp'))
             except (ValueError, TypeError):
-                LOG.error("Invalid timestamp in conversation history.")
+                self.log.error("Invalid timestamp in conversation history.")
                 continue
             
             if message_time < cutoff_time:
@@ -192,16 +200,21 @@ class OpenAiSkill(FallbackSkill):
         with self.file_system.open(file_name, "w") as f:
             json.dump(conversation, f)
 
+    def play_audio_files(self):
+        random.shuffle(self.audio_files)
+        self.play_audio_flag = True
+        audio_thread = threading.Thread(target=self.play_audio_in_loop)
+        audio_thread.start()
+
     def play_audio_in_loop(self):
         while self.play_audio_flag:
             if self.audio_files:
                 for audio_file in self.audio_files:
                     if not self.play_audio_flag:
                         break
-                    process = play_audio(audio_file)
-                    if process:
-                        process.wait()
-                    time.sleep(0.5)
+                    self.play_audio(audio_file)
+                    time.sleep(3)
+        self.audio_done_playing_event.set()
 
 def create_skill():
     return OpenAiSkill()
