@@ -30,7 +30,7 @@ The `settings.json` configuration file may contain the following properties. Onl
 - `api_key`: Your OpenAI API key [REQUIRED]
 - `model`: The OpenAI GPT model you wish to use (default is "gpt-3.5-turbo")
 - `system_prompt`: The system prompt for initiating conversations with the GPT model. This is how you give the model some personality. We have a basic default.
-- `wait_timeout`: The maximum amount of time OVOS should wait while speaking dialog to you. Some ChatGPT responses may take a while to finish. Depends on [this PR](https://github.com/OpenVoiceOS/OVOS-workshop/pull/146) being merged into OVOS Workshop, otherwise do not use this setting. Will eventually default this to 90 seconds.
+- `wait_timeout`: The maximum amount of time OVOS should wait while speaking dialog to you. Some ChatGPT responses may take a while to finish.
 - `audio_files`: An array of audio files (one or many) to shuffle and play while we wait for the OpenAI response. The `gpt-4` model is particularly slow at times. This gives the user some feedback that it's processing. Must be an absolute path to a file on the device. Audio files should be less than three seconds long.
 
 ### Sample JSON Config
