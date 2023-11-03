@@ -31,7 +31,7 @@ def get_requirements(requirements_filename: str):
 
 def find_resource_files():
     # add any folder with files your skill uses here! 
-    resource_base_dirs = ("locale", "ui", "vocab", "dialog", "regex", "skill", "lib")
+    resource_base_dirs = ("locale", "ui", "vocab", "dialog", "regex", "skill")
     base_dir = path.dirname(__file__)
     package_data = ["*.json"]
     for res in resource_base_dirs:

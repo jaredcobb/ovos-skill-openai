@@ -55,7 +55,7 @@ class OpenAiSkill(FallbackSkill):
     def handle_fallback_response(self, message):
         if not self.api_key:
             self.log.error("Missing OpenAI API Key")
-            self.speak("The OpenAI API key is missing. Please check your configuration.")
+            self.speak_dialog("missing.api.key")
             return False
 
         self.audio_done_playing_event.clear()
@@ -71,7 +71,7 @@ class OpenAiSkill(FallbackSkill):
             return False
         self.conversation_loop(response)
         return True
-    
+
     @killable_intent(msg="recognizer_loop:wakeword")
     def conversation_loop(self, response):
         if response.endswith('?'):
@@ -100,7 +100,7 @@ class OpenAiSkill(FallbackSkill):
 
     def open_ai_get_response(self, utterance):
         conversation = self.get_conversation()
-        
+
         # Append the utterance
         conversation.append({
             "role": "user",
@@ -110,7 +110,7 @@ class OpenAiSkill(FallbackSkill):
 
         # Prune the conversation
         pruned_conversation = self.prune_conversation(conversation)
-        
+
         sanitized_conversation = self.sanitize_conversation(conversation)
         payload = self.build_request_payload(sanitized_conversation)
 
@@ -120,8 +120,14 @@ class OpenAiSkill(FallbackSkill):
             parsed_response = self.parse_openai_response(response)
         except openai.error.OpenAIError as e:
             self.log.error(f"OpenAI API error: {str(e)}")
-            parsed_response = "OpenAI API error. Please check the logs."
-        
+            self.speak_dialog("api.error")
+            return False
+
+        if not parsed_response:
+            self.log.error(f"OpenAI API response parsing failed.")
+            self.speak_dialog("general.error")
+            return False
+
         # Append the OpenAI response
         pruned_conversation.append({
             "role": "assistant",
@@ -131,7 +137,7 @@ class OpenAiSkill(FallbackSkill):
 
         # Save the pruned conversation
         self.save_conversation(pruned_conversation)
-        
+
         return parsed_response
 
     def sanitize_conversation(self, conversation):
@@ -153,7 +159,7 @@ class OpenAiSkill(FallbackSkill):
             message_content = api_response['choices'][0]['message']['content']
         except (KeyError, IndexError, TypeError):
             self.log.error(f"OpenAI API response parsing failed. Response: {json.dumps(api_response)}")
-            message_content = "OpenAI API response parsing failed. Please check the logs."
+            return False
         return message_content.strip()
 
     def get_conversation(self):
@@ -178,7 +184,7 @@ class OpenAiSkill(FallbackSkill):
             except (ValueError, TypeError):
                 self.log.error("Invalid timestamp in conversation history.")
                 continue
-            
+
             if message_time < cutoff_time:
                 break
 
@@ -189,12 +195,12 @@ class OpenAiSkill(FallbackSkill):
 
             if token_count + message_token_count > max_tokens:
                 break
-            
+
             token_count += message_token_count
             pruned_conversation.insert(0, message)
 
         return pruned_conversation
-    
+
     def save_conversation(self, conversation):
         file_name = "conversation.json"
         with self.file_system.open(file_name, "w") as f:
