@@ -1,5 +1,5 @@
 import json
-import openai
+from openai import OpenAI
 import random
 import threading
 import tiktoken
@@ -10,19 +10,21 @@ from ovos_utils.process_utils import RuntimeRequirements
 from ovos_workshop.decorators import killable_intent
 from ovos_workshop.skills.fallback import FallbackSkill
 
-class OpenAiSkill(FallbackSkill):
 
+class OpenAiSkill(FallbackSkill):
     @classproperty
     def runtime_requirements(self):
-        return RuntimeRequirements(internet_before_load=True,
-                                   network_before_load=True,
-                                   gui_before_load=False,
-                                   requires_internet=True,
-                                   requires_network=True,
-                                   requires_gui=False,
-                                   no_internet_fallback=False,
-                                   no_network_fallback=False,
-                                   no_gui_fallback=True)
+        return RuntimeRequirements(
+            internet_before_load=True,
+            network_before_load=True,
+            gui_before_load=False,
+            requires_internet=True,
+            requires_network=True,
+            requires_gui=False,
+            no_internet_fallback=False,
+            no_network_fallback=False,
+            no_gui_fallback=True,
+        )
 
     def __init__(self):
         super().__init__("OpenAiSkill")
@@ -46,9 +48,9 @@ class OpenAiSkill(FallbackSkill):
             "Your response should never end with a statement, "
             "only a question unless I end the conversation. "
             "If our topic of conversation changes, reset your response limit "
-            "and incrementally increase your responses."
+            "and incrementally increase your responses.",
         )
-        openai.api_key = self.api_key
+        self.openai_client = OpenAI(api_key=self.api_key)
         self.audio_files = self.settings.get("audio_files", False)
         self.play_audio_flag = False
 
@@ -62,7 +64,7 @@ class OpenAiSkill(FallbackSkill):
         if self.audio_files:
             self.play_audio_files()
 
-        utterance = message.data['utterance']
+        utterance = message.data["utterance"]
         response = self.open_ai_get_response(utterance)
 
         self.play_audio_flag = False
@@ -74,11 +76,12 @@ class OpenAiSkill(FallbackSkill):
 
     @killable_intent(msg="recognizer_loop:wakeword")
     def conversation_loop(self, response):
-        if response.endswith('?'):
-
+        if response.endswith("?"):
             self.log.info("Question detected. Calling self.get_response()")
             self.audio_done_playing_event.wait()
-            follow_up_utterance = self.get_response(dialog=response, num_retries=0, wait=self.wait_timeout)
+            follow_up_utterance = self.get_response(
+                dialog=response, num_retries=0, wait=self.wait_timeout
+            )
             self.log.info(f"follow_up_utterance: {follow_up_utterance}")
             if follow_up_utterance is None:
                 return False
@@ -102,11 +105,9 @@ class OpenAiSkill(FallbackSkill):
         conversation = self.get_conversation()
 
         # Append the utterance
-        conversation.append({
-            "role": "user",
-            "content": utterance,
-            "timestamp": datetime.now().isoformat()
-        })
+        conversation.append(
+            {"role": "user", "content": utterance, "timestamp": datetime.now().isoformat()}
+        )
 
         # Prune the conversation
         pruned_conversation = self.prune_conversation(conversation)
@@ -116,9 +117,9 @@ class OpenAiSkill(FallbackSkill):
 
         self.log.info("Sending payload to OpenAI API")
         try:
-            response = openai.ChatCompletion.create(**payload)
+            response = self.openai_client.chat.completions.create(**payload)
             parsed_response = self.parse_openai_response(response)
-        except openai.error.OpenAIError as e:
+        except OpenAI.OpenAIError as e:
             self.log.error(f"OpenAI API error: {str(e)}")
             self.speak_dialog("api.error")
             return False
@@ -129,11 +130,13 @@ class OpenAiSkill(FallbackSkill):
             return False
 
         # Append the OpenAI response
-        pruned_conversation.append({
-            "role": "assistant",
-            "content": parsed_response,
-            "timestamp": datetime.now().isoformat()
-        })
+        pruned_conversation.append(
+            {
+                "role": "assistant",
+                "content": parsed_response,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
 
         # Save the pruned conversation
         self.save_conversation(pruned_conversation)
@@ -143,22 +146,21 @@ class OpenAiSkill(FallbackSkill):
     def sanitize_conversation(self, conversation):
         sanitized_conversation = []
         for message in conversation:
-            sanitized_message = {k: v for k, v in message.items() if k != 'timestamp'}
+            sanitized_message = {k: v for k, v in message.items() if k != "timestamp"}
             sanitized_conversation.append(sanitized_message)
         return sanitized_conversation
 
     def build_request_payload(self, sanitized_conversation):
-        messages = [
-            {"role": "system", "content": self.system_prompt},
-            *sanitized_conversation
-        ]
+        messages = [{"role": "system", "content": self.system_prompt}, *sanitized_conversation]
         return {"model": self.model, "messages": messages}
 
     def parse_openai_response(self, api_response):
         try:
-            message_content = api_response['choices'][0]['message']['content']
+            message_content = api_response["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError):
-            self.log.error(f"OpenAI API response parsing failed. Response: {json.dumps(api_response)}")
+            self.log.error(
+                f"OpenAI API response parsing failed. Response: {json.dumps(api_response)}"
+            )
             return False
         return message_content.strip()
 
@@ -180,7 +182,7 @@ class OpenAiSkill(FallbackSkill):
 
         for message in reversed(conversation):
             try:
-                message_time = datetime.fromisoformat(message.get('timestamp'))
+                message_time = datetime.fromisoformat(message.get("timestamp"))
             except (ValueError, TypeError):
                 self.log.error("Invalid timestamp in conversation history.")
                 continue
@@ -188,7 +190,7 @@ class OpenAiSkill(FallbackSkill):
             if message_time < cutoff_time:
                 break
 
-            message_content = message.get('content')
+            message_content = message.get("content")
 
             # Calculate token count using tiktoken
             message_token_count = len(encoding.encode(message_content))
@@ -221,6 +223,7 @@ class OpenAiSkill(FallbackSkill):
                     self.play_audio(audio_file)
                     time.sleep(3)
         self.audio_done_playing_event.set()
+
 
 def create_skill():
     return OpenAiSkill()
